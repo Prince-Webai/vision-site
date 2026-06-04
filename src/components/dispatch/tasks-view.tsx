@@ -17,7 +17,7 @@ export function TasksView({ onJobClick, refreshKey }: TasksViewProps) {
         const data = await jobService.fetchJobs();
         setJobs(data);
       } catch (error) {
-        console.error('Failed to load tasks:', error?.message || error);
+        console.error('Failed to load tasks:', (error as any)?.message || error);
       } finally {
         setLoading(false);
       }

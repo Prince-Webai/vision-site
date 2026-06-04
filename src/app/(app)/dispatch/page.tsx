@@ -205,7 +205,7 @@ export default function DispatchPage() {
           <div className="flex-1 min-w-0 overflow-auto">
             {activeTab === 'map' && <DispatchMap refreshKey={refreshKey} onNewJob={() => { setSelectedJobId(undefined); setJobModalOpen(true); }} />}
             {activeTab === 'tasks' && <TasksView refreshKey={refreshKey} onJobClick={handleJobDoubleClick} />}
-            {activeTab === 'calendar' && <CalendarView refreshKey={refreshKey} />}
+            {activeTab === 'calendar' && <CalendarView />}
             {activeTab === 'schedules' && <StaffScheduleView refreshKey={refreshKey} onJobClick={handleJobDoubleClick} />}
           </div>
 
@@ -244,7 +244,7 @@ export default function DispatchPage() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs font-medium text-charcoal">Role</label>
-                <Select value={inviteRole} onValueChange={setInviteRole}>
+                <Select value={inviteRole} onValueChange={(v) => v && setInviteRole(v)}>
                   <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="Technician">Technician</SelectItem>

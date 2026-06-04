@@ -88,7 +88,7 @@ export function MobileDashboard() {
               <Wind className="w-3 h-3 text-mid-gray" /> {weather.wind_speed} km/h
             </p>
             <p className="text-xs text-dark-gray flex items-center justify-end gap-1">
-              <CloudRain className="w-3 h-3 text-mid-gray" /> {weather.precipitation}% rain
+              <CloudRain className="w-3 h-3 text-mid-gray" /> {weather.rain_probability}% rain
             </p>
             <p className="text-xs text-dark-gray flex items-center justify-end gap-1">
               <Droplets className="w-3 h-3 text-mid-gray" /> {weather.humidity}% humidity
@@ -97,11 +97,11 @@ export function MobileDashboard() {
         </div>
       )}
 
-      {/* Weather Alert */}
-      {weather?.alert && (
+      {/* Weather Alert — high rain probability */}
+      {weather && weather.rain_probability >= 70 && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2">
           <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-          <p className="text-xs text-amber-800 font-medium">{weather.alert}</p>
+          <p className="text-xs text-amber-800 font-medium">High rain probability today. Roof work may be impacted.</p>
         </div>
       )}
 

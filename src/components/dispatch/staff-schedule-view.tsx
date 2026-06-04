@@ -43,7 +43,7 @@ export function StaffScheduleView({ onJobClick, refreshKey }: StaffScheduleViewP
         setJobs(jobsData);
         setStaffMembers(profiles.filter((p: any) => p.role === 'Technician' || p.role === 'Dispatcher'));
       } catch (error) {
-        console.error('Failed to load schedule data:', error?.message || error);
+        console.error('Failed to load schedule data:', (error as any)?.message || error);
       } finally {
         setLoading(false);
       }
@@ -226,7 +226,7 @@ export function StaffScheduleView({ onJobClick, refreshKey }: StaffScheduleViewP
                   <div className="flex items-center gap-2">
                     <Avatar className="w-7 h-7 shrink-0">
                       <AvatarFallback className="bg-vision-green/10 text-green-dark text-[10px] font-semibold">
-                        {staff.full_name.split(' ').map(n => n[0]).join('')}
+                        {staff.full_name.split(' ').map((n: string) => n[0]).join('')}
                       </AvatarFallback>
                     </Avatar>
                     <span className="text-xs font-medium text-charcoal truncate">{staff.full_name}</span>
