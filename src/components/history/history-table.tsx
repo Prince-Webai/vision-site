@@ -1,6 +1,6 @@
 'use client';
 
-import { CheckCircle2, Clock, Archive, XCircle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Archive, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import type { Job } from '@/lib/types';
@@ -10,50 +10,27 @@ interface HistoryTableProps {
   page: number;
   totalPages: number;
   onPageChange: (page: number) => void;
+  onJobClick?: (jobId: string) => void;
 }
 
-export function HistoryTable({ jobs, page, totalPages, onPageChange }: HistoryTableProps) {
+export function HistoryTable({ jobs, page, totalPages, onPageChange, onJobClick }: HistoryTableProps) {
   const statusBadge = (status: string) => {
     switch (status) {
       case 'Completed':
         return <Badge className="bg-vision-green/15 text-green-dark border-0 text-xs">Completed</Badge>;
+      case 'Work Order':
+        return <Badge className="bg-blue-100 text-blue-700 border-0 text-xs">Work Order</Badge>;
+      case 'In Progress':
+        return <Badge className="bg-solar-orange/15 text-orange-dark border-0 text-xs">In Progress</Badge>;
       case 'Cancelled':
-        return <Badge className="bg-red-100 text-red-700 border-0 text-xs">Cancelled</Badge>;
-      case 'Archived':
-        return <Badge className="bg-gray-100 text-dark-gray border-0 text-xs">Archived</Badge>;
+        return <Badge className="bg-gray-100 text-dark-gray border-0 text-xs">Cancelled</Badge>;
+      case 'Unsuccessful':
+        return <Badge className="bg-red-100 text-red-700 border-0 text-xs">Unsuccessful</Badge>;
       default:
         return <Badge variant="secondary" className="text-xs">{status}</Badge>;
     }
   };
 
-  const invoiceIcon = (status?: string) => {
-    switch (status) {
-      case 'Paid':
-        return (
-          <div className="flex items-center gap-1.5 text-vision-green">
-            <CheckCircle2 className="w-4 h-4" />
-            <span className="text-xs font-medium">Paid</span>
-          </div>
-        );
-      case 'Unpaid':
-      case 'Draft':
-        return (
-          <div className="flex items-center gap-1.5 text-solar-orange">
-            <Clock className="w-4 h-4" />
-            <span className="text-xs font-medium">{status}</span>
-          </div>
-        );
-      case 'Overdue':
-        return (
-          <div className="flex items-center gap-1.5 text-destructive">
-            <XCircle className="w-4 h-4" />
-            <span className="text-xs font-medium">Overdue</span>
-          </div>
-        );
-      default:
-        return <span className="text-xs text-mid-gray">—</span>;
-    }
-  };
 
   return (
     <div className="bg-white border border-light-gray rounded-xl overflow-hidden">
@@ -66,14 +43,13 @@ export function HistoryTable({ jobs, page, totalPages, onPageChange }: HistoryTa
               <th className="px-4 py-3 text-left text-xs font-semibold text-mid-gray uppercase tracking-wider">Job #</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-mid-gray uppercase tracking-wider">Client Name</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-mid-gray uppercase tracking-wider">Contact</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-mid-gray uppercase tracking-wider">Address</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-mid-gray uppercase tracking-wider">Status</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-mid-gray uppercase tracking-wider">Invoice</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-mid-gray uppercase tracking-wider">System Size</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-light-gray">
             {jobs.map(job => (
-              <tr key={job.id} className="hover:bg-off-white/50 transition-colors cursor-pointer group">
+              <tr key={job.id} onClick={() => onJobClick?.(job.id)} className="hover:bg-off-white/50 transition-colors cursor-pointer group">
                 <td className="px-4 py-3">
                   <span className="text-sm text-dark-gray">
                     {job.completed_date
@@ -89,7 +65,7 @@ export function HistoryTable({ jobs, page, totalPages, onPageChange }: HistoryTa
                 </td>
                 <td className="px-4 py-3">
                   <span className="text-sm font-medium text-charcoal">
-                    {job.client?.first_name} {job.client?.last_name}
+                    {job.contact_name || (job.client ? `${job.client.first_name} ${job.client.last_name}` : '—')}
                   </span>
                 </td>
                 <td className="px-4 py-3">
@@ -98,16 +74,15 @@ export function HistoryTable({ jobs, page, totalPages, onPageChange }: HistoryTa
                     <p className="text-xs text-mid-gray">{job.contact_phone || job.client?.mobile}</p>
                   </div>
                 </td>
-                <td className="px-4 py-3">{statusBadge(job.status)}</td>
-                <td className="px-4 py-3">{invoiceIcon(job.invoice_status)}</td>
                 <td className="px-4 py-3">
-                  <span className="text-sm text-dark-gray font-medium">{job.system_size || '—'}</span>
+                  <span className="text-sm text-dark-gray truncate block max-w-[260px]" title={job.address}>{job.address || '—'}</span>
                 </td>
+                <td className="px-4 py-3">{statusBadge(job.status)}</td>
               </tr>
             ))}
             {jobs.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-12 text-center">
+                <td colSpan={6} className="px-4 py-12 text-center">
                   <Archive className="w-8 h-8 text-light-gray mx-auto mb-3" />
                   <p className="text-sm text-mid-gray">No records found</p>
                   <p className="text-xs text-mid-gray mt-1">Try adjusting your filters or search query</p>

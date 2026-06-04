@@ -1,9 +1,11 @@
 'use client';
 
-import { Package, Search, ArrowRight } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Wrench, CheckCircle2, ArrowRight } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { mockJobs } from '@/lib/mock-data';
+import { jobService } from '@/lib/supabase/service';
+import type { Job } from '@/lib/types';
 
 interface KanbanCardProps {
   jobNumber: string;
@@ -43,30 +45,35 @@ interface ActionKanbanProps {
 }
 
 export function ActionKanban({ onJobClick }: ActionKanbanProps) {
-  // Parts to order: materials_status = 'Pending'
-  const partsToOrder = mockJobs.filter(j => j.materials_status === 'Pending');
+  const [jobs, setJobs] = useState<Job[]>([]);
+  useEffect(() => {
+    jobService.fetchJobs().then(setJobs).catch(() => setJobs([]));
+  }, []);
 
-  // Pending site assessments: status = 'Lead' and requires_site_visit = true
-  const pendingAssessments = mockJobs.filter(j => j.status === 'Lead' && j.requires_site_visit);
+  const pending = jobs.filter(j =>
+    ['Lead', 'Quote', 'Quote Sent', 'Work Order', 'In Progress'].includes(j.status)
+  );
+  const completed = jobs
+    .filter(j => j.status === 'Completed')
+    .sort((a, b) => (b.completed_date || b.updated_at).localeCompare(a.completed_date || a.updated_at))
+    .slice(0, 10);
 
   const columns = [
     {
-      title: 'Parts to Order',
-      icon: Package,
+      title: 'Pending Jobs',
+      icon: Wrench,
       iconColor: 'text-solar-orange',
       iconBg: 'bg-orange-50',
-      items: partsToOrder,
-      badgeText: 'Pending',
+      items: pending,
       badgeColor: 'bg-solar-orange/15 text-orange-dark',
     },
     {
-      title: 'Pending Assessments',
-      icon: Search,
-      iconColor: 'text-blue-600',
-      iconBg: 'bg-blue-50',
-      items: pendingAssessments,
-      badgeText: 'Site Visit',
-      badgeColor: 'bg-blue-100 text-blue-700',
+      title: 'Recently Completed',
+      icon: CheckCircle2,
+      iconColor: 'text-vision-green',
+      iconBg: 'bg-green-50',
+      items: completed,
+      badgeColor: 'bg-vision-green/15 text-green-dark',
     },
   ];
 
@@ -98,9 +105,9 @@ export function ActionKanban({ onJobClick }: ActionKanbanProps) {
                       <KanbanCard
                         key={job.id}
                         jobNumber={job.job_number}
-                        clientName={`${job.client?.first_name} ${job.client?.last_name}`}
+                        clientName={job.contact_name || (job.client ? `${job.client.first_name} ${job.client.last_name}` : '—')}
                         address={job.address}
-                        badge={col.badgeText}
+                        badge={job.status}
                         badgeColor={col.badgeColor}
                         onClick={() => onJobClick?.(job.id)}
                       />

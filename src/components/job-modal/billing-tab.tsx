@@ -1,13 +1,14 @@
 'use client';
 
 import { useState } from 'react';
-import { Plus, Trash2, Send, MessageSquare, Check, X, Sparkles, Palette } from 'lucide-react';
+import { Plus, Trash2, Send, MessageSquare, Check, X, Sparkles, Palette, CreditCard } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Separator } from '@/components/ui/separator';
 import { mockJobItems } from '@/lib/mock-data';
+import { toast } from 'sonner';
 
 interface LineItem {
   id: string;
@@ -18,7 +19,12 @@ interface LineItem {
   taxPercent: number;
 }
 
-export function BillingTab() {
+interface BillingTabProps {
+  jobId?: string;
+}
+
+export function BillingTab({ jobId }: BillingTabProps) {
+  const [busy, setBusy] = useState<string | null>(null);
   const [billingSameAsJob, setBillingSameAsJob] = useState(true);
   const [quoteDescription, setQuoteDescription] = useState('');
   const [items, setItems] = useState<LineItem[]>(
@@ -46,6 +52,36 @@ export function BillingTab() {
   const updateItem = (id: string, field: keyof LineItem, value: string | number) => {
     setItems(items.map(i => i.id === id ? { ...i, [field]: value } : i));
   };
+
+  async function callAction(action: 'send-quote' | 'send-sms' | 'payment-link') {
+    if (!jobId) {
+      toast.error('Save the job first');
+      return;
+    }
+    setBusy(action);
+    try {
+      const res = await fetch(`/api/jobs/${jobId}/${action}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || 'Action failed');
+        return;
+      }
+      if (action === 'send-quote') toast.success(`Quote emailed (${data.provider}) to ${data.sentTo}`);
+      else if (action === 'send-sms') toast.success(`SMS sent (${data.provider}) to ${data.sentTo}`);
+      else if (action === 'payment-link') {
+        toast.success(`Payment link created (${data.provider})`);
+        if (data.url) window.open(data.url, '_blank');
+      }
+    } catch (err) {
+      toast.error(String(err));
+    } finally {
+      setBusy(null);
+    }
+  }
 
   const subtotal = items.reduce((sum, i) => sum + i.qty * i.unitPrice, 0);
   const tax = items.reduce((sum, i) => sum + (i.qty * i.unitPrice * i.taxPercent) / 100, 0);
@@ -188,7 +224,7 @@ export function BillingTab() {
           <span className="font-medium text-charcoal">${subtotal.toFixed(2)}</span>
         </div>
         <div className="flex items-center justify-between text-sm">
-          <span className="text-dark-gray">Tax (GST)</span>
+          <span className="text-dark-gray">Tax (VAT)</span>
           <span className="font-medium text-charcoal">${tax.toFixed(2)}</span>
         </div>
         <Separator className="bg-light-gray" />
@@ -204,17 +240,30 @@ export function BillingTab() {
       <div className="space-y-3">
         <label className="text-sm font-medium text-charcoal">Actions</label>
         <div className="grid grid-cols-2 gap-2">
-          <Button className="bg-solar-orange hover:bg-orange-light text-white gap-2 h-10 shadow-sm">
+          <Button
+            onClick={() => callAction('send-quote')}
+            disabled={busy !== null}
+            className="bg-solar-orange hover:bg-orange-light text-white gap-2 h-10 shadow-sm"
+          >
             <Send className="w-4 h-4" />
-            Send Quote
+            {busy === 'send-quote' ? 'Sending…' : 'Send Quote'}
           </Button>
-          <Button variant="outline" className="gap-2 h-10 border-light-gray text-dark-gray hover:bg-off-white">
+          <Button
+            onClick={() => callAction('send-sms')}
+            disabled={busy !== null}
+            variant="outline"
+            className="gap-2 h-10 border-light-gray text-dark-gray hover:bg-off-white"
+          >
             <MessageSquare className="w-4 h-4" />
-            SMS Quote
+            {busy === 'send-sms' ? 'Sending…' : 'SMS Quote'}
           </Button>
-          <Button className="bg-vision-green hover:bg-green-light text-white gap-2 h-10 shadow-sm">
-            <Check className="w-4 h-4" />
-            Accept
+          <Button
+            onClick={() => callAction('payment-link')}
+            disabled={busy !== null}
+            className="bg-vision-green hover:bg-green-light text-white gap-2 h-10 shadow-sm"
+          >
+            <CreditCard className="w-4 h-4" />
+            {busy === 'payment-link' ? 'Creating…' : 'Payment Link'}
           </Button>
           <Button variant="outline" className="gap-2 h-10 border-light-gray text-mid-gray hover:bg-off-white">
             <X className="w-4 h-4" />

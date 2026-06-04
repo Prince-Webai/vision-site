@@ -1,13 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, GripVertical, Trash2, Search, MapPin, User } from 'lucide-react';
+import { Plus, GripVertical, Trash2, Search, Loader2, UserCircle2, MoreVertical } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Separator } from '@/components/ui/separator';
 import { JOB_STATUSES, JOB_CATEGORIES } from '@/lib/constants';
 import { jobService } from '@/lib/supabase/service';
 import { toast } from 'sonner';
@@ -26,213 +25,321 @@ interface DetailsTabProps {
 
 export function DetailsTab({ jobId, onSuccess }: DetailsTabProps) {
   const [loading, setLoading] = useState(false);
-  const [clientSearch, setClientSearch] = useState('');
-  const [showClientDropdown, setShowClientDropdown] = useState(false);
-  const [selectedClient, setSelectedClient] = useState<string | null>(null);
-  const [status, setStatus] = useState('Quote');
-  const [category, setCategory] = useState('Installation');
+  const [status, setStatus] = useState('Work Order');
+  const [category, setCategory] = useState('');
   const [poNumber, setPoNumber] = useState('');
   const [address, setAddress] = useState('');
   const [description, setDescription] = useState('');
-  const [contactName, setContactName] = useState('');
+
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [contactEmail, setContactEmail] = useState('');
   const [contactPhone, setContactPhone] = useState('');
   const [contactMobile, setContactMobile] = useState('');
-  const [checklist, setChecklist] = useState<ChecklistItemType[]>([
-    { id: '1', text: 'Confirm site access requirements', completed: false },
-    { id: '2', text: 'Verify roof condition and measurements', completed: false },
-  ]);
-  const [billingSameAsJob, setBillingSameAsJob] = useState(true);
-  const [clients, setClients] = useState<Client[]>([]);
 
+  const [checklist, setChecklist] = useState<ChecklistItemType[]>([]);
+
+  // Client search
+  const [clients, setClients] = useState<Client[]>([]);
+  const [clientSearch, setClientSearch] = useState('');
+  const [showClientList, setShowClientList] = useState(false);
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+
+  // Eircode lookup
+  const [eircode, setEircode] = useState('');
+  const [eircodeLoading, setEircodeLoading] = useState(false);
+
+  // Load clients for search
   useEffect(() => {
-    async function loadClients() {
-      try {
-        const data = await jobService.fetchClients();
-        setClients(data);
-      } catch (error) {
-        console.error('Failed to load clients:', error);
-      }
-    }
-    loadClients();
+    jobService.fetchClients().then(setClients).catch(() => setClients([]));
   }, []);
 
+  // Load existing job when editing
+  useEffect(() => {
+    if (!jobId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const job = await jobService.fetchJob(jobId);
+        if (cancelled) return;
+        setStatus(job.status || 'Work Order');
+        setCategory(job.category || '');
+        setPoNumber(job.po_number || '');
+        setAddress(job.address || '');
+        setEircode(extractEircode(job.address || ''));
+        setDescription(job.description || '');
+        const nameSrc = job.contact_name || (job.client ? `${job.client.first_name} ${job.client.last_name}` : '');
+        const [f, ...rest] = nameSrc.trim().split(' ');
+        setFirstName(f || '');
+        setLastName(rest.join(' '));
+        setContactEmail(job.contact_email || job.client?.email || '');
+        setContactPhone(job.contact_phone || job.client?.phone || '');
+        setContactMobile(job.client?.mobile || '');
+        setSelectedClientId(job.client_id || null);
+        if (job.client) setClientSearch(`${job.client.first_name} ${job.client.last_name}`);
+        if (job.checklist && job.checklist.length > 0) {
+          setChecklist(job.checklist.map((c: any) => ({ id: c.id, text: c.text, completed: c.completed })));
+        }
+      } catch (err: any) {
+        console.error('Failed to load job:', err);
+        toast.error(err?.message || 'Failed to load job');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [jobId]);
+
   const filteredClients = clients.filter(c => {
-    if (!clientSearch) return true;
+    if (!clientSearch.trim()) return false;
     const q = clientSearch.toLowerCase();
     return (
       c.first_name.toLowerCase().includes(q) ||
       c.last_name.toLowerCase().includes(q) ||
-      c.email.toLowerCase().includes(q)
+      (c.email && c.email.toLowerCase().includes(q))
     );
   });
 
-  const addChecklistItem = () => {
-    setChecklist([
-      ...checklist,
-      { id: Date.now().toString(), text: '', completed: false },
-    ]);
-  };
+  function pickClient(c: Client) {
+    setSelectedClientId(c.id);
+    setClientSearch(`${c.first_name} ${c.last_name}`);
+    setShowClientList(false);
+    setFirstName(c.first_name);
+    setLastName(c.last_name);
+    setContactEmail(c.email || '');
+    setContactPhone(c.phone || '');
+    setContactMobile(c.mobile || '');
+    if (!address && c.address) setAddress(c.address);
+  }
 
-  const removeChecklistItem = (id: string) => {
-    setChecklist(checklist.filter(item => item.id !== id));
-  };
+  const addChecklistItem = () =>
+    setChecklist([...checklist, { id: Date.now().toString(), text: '', completed: false }]);
+  const removeChecklistItem = (id: string) => setChecklist(checklist.filter(i => i.id !== id));
+  const toggleChecklistItem = (id: string) =>
+    setChecklist(checklist.map(i => i.id === id ? { ...i, completed: !i.completed } : i));
+  const updateChecklistText = (id: string, text: string) =>
+    setChecklist(checklist.map(i => i.id === id ? { ...i, text } : i));
 
-  const toggleChecklistItem = (id: string) => {
-    setChecklist(checklist.map(item =>
-      item.id === id ? { ...item, completed: !item.completed } : item
-    ));
-  };
+  async function lookupEircode() {
+    const code = eircode.trim();
+    if (!code) { toast.error('Enter an Eircode'); return; }
+    setEircodeLoading(true);
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&countrycodes=ie&limit=1&q=${encodeURIComponent(code)}`,
+        { headers: { 'Accept-Language': 'en' } }
+      );
+      const data = await res.json();
+      if (!Array.isArray(data) || data.length === 0) {
+        toast.error('Eircode not found — type the address manually below');
+        return;
+      }
+      const display = data[0].display_name;
+      // Prepend Eircode so it persists with the address
+      const withCode = display.toUpperCase().includes(code.toUpperCase())
+        ? display
+        : `${code}, ${display}`;
+      setAddress(withCode);
+      toast.success('Address filled from Eircode');
+    } catch (err: any) {
+      toast.error(err?.message || 'Lookup failed');
+    } finally {
+      setEircodeLoading(false);
+    }
+  }
 
-  const updateChecklistText = (id: string, text: string) => {
-    setChecklist(checklist.map(item =>
-      item.id === id ? { ...item, text } : item
-    ));
-  };
+  // Extract Irish Eircode pattern from a free-text address. Returns "" if none.
+  function extractEircode(addr: string): string {
+    if (!addr) return '';
+    // Irish Eircode: routing key (letter + 2 digits) + space? + unique identifier (4 alphanum)
+    const m = addr.toUpperCase().match(/\b([A-Z]\d{2})\s?([A-Z0-9]{4})\b/);
+    return m ? `${m[1]} ${m[2]}` : '';
+  }
 
-  const selectedClientData = selectedClient
-    ? clients.find(c => c.id === selectedClient)
-    : null;
+  async function handleSave() {
+    const fullName = `${firstName} ${lastName}`.trim();
+    if (!fullName) { toast.error('Enter a first name'); return; }
+    if (!address.trim()) { toast.error('Enter a job address'); return; }
+
+    // Light phone validation — must contain at least 6 digits if provided
+    const phoneDigits = (s: string) => (s.match(/\d/g) || []).length;
+    if (contactPhone && phoneDigits(contactPhone) < 6) {
+      toast.error('Phone looks invalid — use international format e.g. +353 1 234 5678');
+      return;
+    }
+    if (contactMobile && phoneDigits(contactMobile) < 6) {
+      toast.error('Mobile looks invalid — use international format e.g. +353 87 123 4567');
+      return;
+    }
+    // Light email validation
+    if (contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail)) {
+      toast.error('Email looks invalid');
+      return;
+    }
+
+    // Embed Eircode in the address so it persists alongside the address text
+    let finalAddress = address.trim();
+    if (eircode.trim() && !finalAddress.toUpperCase().includes(eircode.trim().toUpperCase())) {
+      finalAddress = `${eircode.trim()}, ${finalAddress}`;
+    }
+
+    setLoading(true);
+    try {
+      let clientId = selectedClientId;
+
+      if (!clientId) {
+        const newClient = await jobService.createClient({
+          first_name: firstName || 'Unknown',
+          last_name: lastName || '-',
+          email: contactEmail,
+          phone: contactPhone,
+          mobile: contactMobile,
+          address: finalAddress,
+        });
+        clientId = newClient.id;
+      }
+
+      const jobData: any = {
+        client_id: clientId,
+        address: finalAddress,
+        status,
+        category: category || null,
+        description,
+        po_number: poNumber,
+        contact_name: fullName,
+        contact_email: contactEmail,
+        contact_phone: contactPhone,
+      };
+
+      let saved;
+      if (jobId) saved = await jobService.updateJob(jobId, jobData);
+      else       saved = await jobService.createJob(jobData);
+
+      await jobService.saveChecklist(
+        saved.id,
+        checklist.filter(i => i.text.trim()).map(i => ({ text: i.text, completed: i.completed }))
+      );
+
+      toast.success(jobId ? 'Job updated' : 'Job created');
+      onSuccess?.();
+    } catch (err: any) {
+      console.error('Failed to save job:', err);
+      toast.error(err?.message || 'Failed to save job');
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Client Search */}
-      <div className="space-y-2">
-        <label className="text-sm font-medium text-charcoal flex items-center gap-1.5">
-          <User className="w-3.5 h-3.5 text-mid-gray" />
-          Client
-        </label>
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-mid-gray" />
-          <Input
-            id="client-search"
-            placeholder="Search existing client or add new..."
-            value={clientSearch}
-            onChange={(e) => {
-              setClientSearch(e.target.value);
-              setShowClientDropdown(true);
-            }}
-            onFocus={() => setShowClientDropdown(true)}
-            className="pl-9 h-10 bg-off-white border-light-gray"
-          />
-          {showClientDropdown && clientSearch && (
-            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-light-gray rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
-              {filteredClients.map(c => (
-                <button
-                  key={c.id}
-                  className="w-full text-left px-3 py-2 hover:bg-off-white transition-colors flex items-center gap-3"
-                  onClick={() => {
-                    setSelectedClient(c.id);
-                    setClientSearch(`${c.first_name} ${c.last_name}`);
-                    setShowClientDropdown(false);
-                  }}
-                >
-                  <div className="w-7 h-7 rounded-full bg-vision-green/10 flex items-center justify-center text-xs font-semibold text-green-dark">
-                    {c.first_name[0]}{c.last_name[0]}
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-charcoal">{c.first_name} {c.last_name}</p>
-                    <p className="text-xs text-mid-gray">{c.email}</p>
-                  </div>
-                </button>
-              ))}
+    <div className="p-6 max-w-3xl">
+      {/* Search / Create Client */}
+      <div className="relative mb-3">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-mid-gray pointer-events-none" />
+        <Input
+          placeholder="Search or Create Client"
+          value={clientSearch}
+          onChange={(e) => { setClientSearch(e.target.value); setShowClientList(true); setSelectedClientId(null); }}
+          onFocus={() => setShowClientList(true)}
+          className="pl-9 h-10 bg-white border-light-gray"
+        />
+        {showClientList && filteredClients.length > 0 && (
+          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-light-gray rounded-md shadow-lg z-20 max-h-48 overflow-y-auto">
+            {filteredClients.map(c => (
               <button
-                className="w-full text-left px-3 py-2 hover:bg-off-white transition-colors flex items-center gap-2 text-vision-green border-t border-light-gray"
-                onClick={() => setShowClientDropdown(false)}
+                key={c.id}
+                onClick={() => pickClient(c)}
+                className="w-full text-left px-3 py-2 hover:bg-off-white flex items-center gap-2"
               >
-                <Plus className="w-4 h-4" />
-                <span className="text-sm font-medium">Create new client</span>
+                <UserCircle2 className="w-4 h-4 text-mid-gray" />
+                <div>
+                  <p className="text-sm font-medium text-charcoal">{c.first_name} {c.last_name}</p>
+                  <p className="text-xs text-mid-gray">{c.email}</p>
+                </div>
               </button>
-            </div>
-          )}
-        </div>
-        {selectedClientData && (
-          <div className="bg-off-white rounded-lg p-3 text-xs text-dark-gray space-y-0.5">
-            <p><span className="text-mid-gray">Phone:</span> {selectedClientData.phone}</p>
-            <p><span className="text-mid-gray">Mobile:</span> {selectedClientData.mobile}</p>
-            <p><span className="text-mid-gray">Email:</span> {selectedClientData.email}</p>
+            ))}
           </div>
         )}
       </div>
 
-      {/* Job Address */}
-      <div className="space-y-2">
-        <label className="text-sm font-medium text-charcoal flex items-center gap-1.5">
-          <MapPin className="w-3.5 h-3.5 text-mid-gray" />
-          Job Address
-        </label>
+      {/* Address + Eircode */}
+      <div className="space-y-2 mb-4">
+        <div className="flex gap-2">
+          <Input
+            placeholder="Eircode (e.g. D01 F5P2)"
+            value={eircode}
+            onChange={(e) => setEircode(e.target.value.toUpperCase())}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); lookupEircode(); } }}
+            className="h-10 bg-white border-light-gray w-44 uppercase tracking-wider"
+            maxLength={8}
+          />
+          <Button
+            type="button"
+            onClick={lookupEircode}
+            disabled={eircodeLoading}
+            variant="outline"
+            className="h-10 gap-1.5 border-light-gray text-dark-gray hover:bg-off-white"
+          >
+            {eircodeLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+            Lookup
+          </Button>
+        </div>
         <Input
-          id="job-address"
-          placeholder="Start typing an address..."
+          placeholder="Enter Job Address"
           value={address}
           onChange={(e) => setAddress(e.target.value)}
-          className="h-10 bg-off-white border-light-gray"
+          className="h-10 bg-white border-light-gray"
         />
       </div>
 
-      {/* Status + Category */}
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-charcoal">Job Status</label>
+      {/* Status / Category / PO Number */}
+      <div className="grid grid-cols-3 gap-3 mb-4">
+        <div>
+          <label className="text-xs text-charcoal block mb-1">Job Status</label>
           <Select value={status} onValueChange={(v) => v && setStatus(v)}>
-            <SelectTrigger className="h-10 bg-off-white border-light-gray">
-              <SelectValue />
-            </SelectTrigger>
+            <SelectTrigger className="h-9 bg-white border-light-gray text-sm"><SelectValue /></SelectTrigger>
             <SelectContent>
-              {Object.values(JOB_STATUSES).map(s => (
-                <SelectItem key={s} value={s}>{s}</SelectItem>
-              ))}
+              {Object.values(JOB_STATUSES).map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
             </SelectContent>
           </Select>
         </div>
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-charcoal">Category</label>
-          <Select value={category} onValueChange={(v) => v && setCategory(v)}>
-            <SelectTrigger className="h-10 bg-off-white border-light-gray">
-              <SelectValue />
-            </SelectTrigger>
+        <div>
+          <label className="text-xs text-charcoal block mb-1">Job Category</label>
+          <Select value={category || undefined} onValueChange={(v) => setCategory(v || '')}>
+            <SelectTrigger className="h-9 bg-white border-light-gray text-sm"><SelectValue placeholder="—" /></SelectTrigger>
             <SelectContent>
-              {Object.values(JOB_CATEGORIES).map(c => (
-                <SelectItem key={c} value={c}>{c}</SelectItem>
-              ))}
+              {Object.values(JOB_CATEGORIES).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
             </SelectContent>
           </Select>
         </div>
-      </div>
-
-      {/* PO Number */}
-      <div className="space-y-2">
-        <label className="text-sm font-medium text-charcoal">PO Number</label>
-        <Input
-          id="po-number"
-          placeholder="Enter PO number"
-          value={poNumber}
-          onChange={(e) => setPoNumber(e.target.value)}
-          className="h-10 bg-off-white border-light-gray"
-        />
+        <div>
+          <label className="text-xs text-charcoal block mb-1">PO Number</label>
+          <Input
+            value={poNumber}
+            onChange={(e) => setPoNumber(e.target.value)}
+            className="h-9 bg-white border-light-gray"
+          />
+        </div>
       </div>
 
       {/* Description */}
-      <div className="space-y-2">
-        <label className="text-sm font-medium text-charcoal">Job Description</label>
+      <div className="mb-4">
+        <label className="text-xs text-charcoal block mb-1">Job Description</label>
         <Textarea
-          id="job-description"
           placeholder="Describe the work that needs to be done"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          className="min-h-24 bg-off-white border-light-gray resize-none"
+          className="min-h-[80px] bg-white border-light-gray text-sm resize-none"
         />
       </div>
 
-      <Separator className="bg-light-gray" />
-
       {/* Checklist */}
-      <div className="space-y-3">
-        <label className="text-sm font-medium text-charcoal">Checklist</label>
-        <div className="space-y-2">
+      <div className="border border-light-gray rounded-md mb-4 overflow-hidden">
+        <div className="flex items-center justify-between px-3 py-2 border-b border-light-gray bg-off-white">
+          <span className="text-sm font-medium text-charcoal">Checklist</span>
+          <MoreVertical className="w-4 h-4 text-mid-gray" />
+        </div>
+        <div className="p-2 space-y-1">
           {checklist.map(item => (
-            <div key={item.id} className="flex items-center gap-2 group">
-              <GripVertical className="w-4 h-4 text-light-gray cursor-grab shrink-0" />
+            <div key={item.id} className="flex items-center gap-2 group px-1">
+              <GripVertical className="w-3.5 h-3.5 text-light-gray cursor-grab shrink-0" />
               <Checkbox
                 checked={item.completed}
                 onCheckedChange={() => toggleChecklistItem(item.id)}
@@ -242,141 +349,83 @@ export function DetailsTab({ jobId, onSuccess }: DetailsTabProps) {
                 value={item.text}
                 onChange={(e) => updateChecklistText(item.id, e.target.value)}
                 placeholder="Checklist item..."
-                className={`h-8 flex-1 text-sm bg-transparent border-transparent hover:border-light-gray focus:border-light-gray ${
+                className={`h-7 flex-1 text-sm border-transparent bg-transparent focus:bg-white focus:border-light-gray ${
                   item.completed ? 'line-through text-mid-gray' : ''
                 }`}
               />
               <button
                 onClick={() => removeChecklistItem(item.id)}
-                className="opacity-0 group-hover:opacity-100 text-mid-gray hover:text-destructive transition-all"
+                className="opacity-0 group-hover:opacity-100 text-mid-gray hover:text-destructive"
               >
                 <Trash2 className="w-3.5 h-3.5" />
               </button>
             </div>
           ))}
+          <button
+            onClick={addChecklistItem}
+            className="flex items-center gap-1.5 px-1.5 py-1 text-sm text-vision-green hover:text-green-dark"
+          >
+            <Plus className="w-3.5 h-3.5" /> New Item
+          </button>
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={addChecklistItem}
-          className="text-vision-green hover:text-green-dark hover:bg-accent gap-1.5 h-8"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          New Item
-        </Button>
       </div>
 
-      <Separator className="bg-light-gray" />
-
       {/* Contacts */}
-      <div className="space-y-4">
-        <label className="text-sm font-medium text-charcoal">Job Contact</label>
-        <div className="grid grid-cols-2 gap-3">
-          <Input 
-            placeholder="Name" 
-            className="h-9 text-sm bg-off-white border-light-gray" 
-            value={contactName}
-            onChange={(e) => setContactName(e.target.value)}
-          />
-          <Input 
-            placeholder="Email" 
-            className="h-9 text-sm bg-off-white border-light-gray" 
-            value={contactEmail}
-            onChange={(e) => setContactEmail(e.target.value)}
-          />
-          <Input 
-            placeholder="Phone" 
-            className="h-9 text-sm bg-off-white border-light-gray" 
-            value={contactPhone}
-            onChange={(e) => setContactPhone(e.target.value)}
-          />
-          <Input 
-            placeholder="Mobile" 
-            className="h-9 text-sm bg-off-white border-light-gray" 
-            value={contactMobile}
-            onChange={(e) => setContactMobile(e.target.value)}
-          />
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Checkbox
-            id="billing-same"
-            checked={billingSameAsJob}
-            onCheckedChange={(c) => setBillingSameAsJob(c === true)}
-            className="border-light-gray data-[state=checked]:bg-vision-green data-[state=checked]:border-vision-green"
-          />
-          <label htmlFor="billing-same" className="text-sm text-dark-gray cursor-pointer select-none">
-            Billing contact same as job contact
-          </label>
+      <div className="mb-6">
+        <label className="text-sm font-medium text-charcoal block mb-2">Contacts</label>
+        <div className="flex gap-3">
+          <div className="shrink-0">
+            <div className="flex items-center gap-2 bg-off-white border border-light-gray rounded-md px-3 h-9">
+              <UserCircle2 className="w-4 h-4 text-mid-gray" />
+              <span className="text-xs font-medium text-dark-gray">Job Contact</span>
+            </div>
+          </div>
+          <div className="flex-1 space-y-2">
+            <div className="grid grid-cols-2 gap-2">
+              <Input
+                placeholder="First name"
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
+                className="h-9 bg-white border-light-gray text-sm"
+              />
+              <Input
+                placeholder="Last name"
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
+                className="h-9 bg-white border-light-gray text-sm"
+              />
+            </div>
+            <Input
+              type="email"
+              placeholder="Email"
+              value={contactEmail}
+              onChange={(e) => setContactEmail(e.target.value)}
+              className="h-9 bg-white border-light-gray text-sm"
+            />
+            <Input
+              placeholder="Phone (e.g. +353 1 234 5678)"
+              value={contactPhone}
+              onChange={(e) => setContactPhone(e.target.value)}
+              className="h-9 bg-white border-light-gray text-sm"
+            />
+            <Input
+              placeholder="Mobile (e.g. +353 87 123 4567)"
+              value={contactMobile}
+              onChange={(e) => setContactMobile(e.target.value)}
+              className="h-9 bg-white border-light-gray text-sm"
+            />
+          </div>
         </div>
       </div>
 
       {/* Save button */}
       <div className="pt-2 pb-4">
-        <Button 
-          onClick={async () => {
-            try {
-              setLoading(true);
-              let clientId = selectedClient;
-
-              // If no client selected but name/email provided, create a new one
-              if (!clientId && contactName) {
-                const names = contactName.split(' ');
-                const newClient = await jobService.createClient({
-                  first_name: names[0] || 'Unknown',
-                  last_name: names.slice(1).join(' ') || 'Client',
-                  email: contactEmail || `${contactName.toLowerCase().replace(' ', '.')}@example.com`,
-                  phone: contactPhone,
-                  mobile: contactMobile,
-                  address: address
-                });
-                clientId = newClient.id;
-              }
-
-              if (!clientId) {
-                toast.error('Please select or create a client');
-                return;
-              }
-
-              const jobData = {
-                client_id: clientId,
-                address,
-                status: status as any,
-                category: category as any,
-                description,
-                po_number: poNumber,
-                contact_name: contactName,
-                contact_email: contactEmail,
-                contact_phone: contactPhone,
-                billing_same_as_job: billingSameAsJob
-              };
-
-              let savedJob;
-              if (jobId) {
-                savedJob = await jobService.updateJob(jobId, jobData);
-              } else {
-                savedJob = await jobService.createJob(jobData);
-              }
-
-              // Save checklist
-              await jobService.saveChecklist(savedJob.id, checklist.map(item => ({
-                text: item.text,
-                completed: item.completed
-              })));
-
-              toast.success(jobId ? 'Job updated' : 'Job created');
-              onSuccess?.();
-            } catch (error) {
-              console.error('Failed to save job:', error);
-              toast.error('Failed to save job');
-            } finally {
-              setLoading(false);
-            }
-          }}
+        <Button
+          onClick={handleSave}
           disabled={loading}
           className="w-full bg-vision-green hover:bg-green-light text-white h-10 font-semibold shadow-md shadow-vision-green/20"
         >
-          {loading ? 'Saving...' : 'Save Job'}
+          {loading ? 'Saving...' : jobId ? 'Update Job' : 'Save Job'}
         </Button>
       </div>
     </div>

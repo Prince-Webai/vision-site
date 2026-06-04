@@ -1,189 +1,147 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { GoogleMap, useLoadScript, MarkerF, InfoWindowF } from '@react-google-maps/api';
-import { Plus } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import 'leaflet/dist/leaflet.css';
+import { useState, useEffect, useMemo } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import L from 'leaflet';
 import { jobService } from '@/lib/supabase/service';
 import { MELBOURNE_COORDS } from '@/lib/constants';
+import { geocodeAddress } from '@/lib/geocode';
 import type { Job, StaffLocation } from '@/lib/types';
 
-const mapContainerStyle = {
-  width: '100%',
-  height: '100%',
-};
-
-const defaultCenter = {
-  lat: MELBOURNE_COORDS.lat,
-  lng: MELBOURNE_COORDS.lng,
-};
-
-const createStaffIcon = () => `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
-<svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
-  <circle cx="20" cy="20" r="16" fill="#5C8F5A" stroke="white" stroke-width="2"/>
-  <svg x="8" y="8" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M14 16H9m10 0h3v-3.15a1 1 0 0 0-.84-.99L16 11l-2.7-3.6a1 1 0 0 0-.8-.4H5.24a2 2 0 0 0-2 2v8.36a2 2 0 0 0 2 2h.01"/>
-    <circle cx="6.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="17.5" r="2.5"/>
-  </svg>
-</svg>
-`)}`;
-
-const createJobIcon = () => `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
-<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-  <circle cx="12" cy="12" r="10" fill="#E3A25B" stroke="white" stroke-width="2"/>
-</svg>
-`)}`;
-
-export function DispatchMap({ onNewJob, refreshKey }: { onNewJob: () => void; refreshKey?: number }) {
-  const { isLoaded, loadError } = useLoadScript({
-    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '',
+// Tear-drop SVG markers (no external image needed)
+function makeIcon(color: string) {
+  const svg = `<svg width="28" height="40" viewBox="0 0 28 40" xmlns="http://www.w3.org/2000/svg">
+    <path d="M14 0C6.27 0 0 6.27 0 14c0 10.5 14 26 14 26s14-15.5 14-26C28 6.27 21.73 0 14 0z" fill="${color}" stroke="white" stroke-width="2"/>
+    <circle cx="14" cy="13" r="5" fill="white"/>
+  </svg>`;
+  return L.divIcon({
+    html: svg,
+    className: '',
+    iconSize: [28, 40],
+    iconAnchor: [14, 40],
+    popupAnchor: [0, -36],
   });
+}
+const jobIcon = makeIcon('#E3A25B');
+const staffIcon = makeIcon('#5C8F5A');
 
+function FitBounds({ points }: { points: { lat: number; lng: number }[] }) {
+  const map = useMap();
+  useEffect(() => {
+    if (points.length === 0) return;
+    if (points.length === 1) {
+      map.setView([points[0].lat, points[0].lng], 11);
+      return;
+    }
+    const bounds = L.latLngBounds(points.map(p => [p.lat, p.lng]));
+    map.fitBounds(bounds, { padding: [40, 40] });
+  }, [JSON.stringify(points), map]);
+  return null;
+}
+
+interface JobWithCoords extends Job { coords: { lat: number; lng: number } }
+
+export function DispatchMap({ refreshKey }: { onNewJob?: () => void; refreshKey?: number }) {
   const [staffLocations, setStaffLocations] = useState<StaffLocation[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
-  const [selectedStaff, setSelectedStaff] = useState<StaffLocation | null>(null);
-  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
+  const [coords, setCoords] = useState<Record<string, { lat: number; lng: number }>>({});
+  const [geocoding, setGeocoding] = useState(false);
 
   useEffect(() => {
-    async function loadData() {
+    (async () => {
       try {
-        const [jobsData, staffData] = await Promise.all([
-          jobService.fetchJobs(),
-          jobService.fetchStaffLocations()
-        ]);
-        setJobs(jobsData);
-        setStaffLocations(staffData as StaffLocation[]);
-      } catch (error) {
-        console.error('Failed to load map data:', error);
+        const [j, s] = await Promise.all([jobService.fetchJobs(), jobService.fetchStaffLocations()]);
+        setJobs(j);
+        setStaffLocations(s as StaffLocation[]);
+      } catch (e: any) { console.error('Failed to load map data:', e?.message || e); }
+    })();
+  }, [refreshKey]);
+
+  const visibleJobs = useMemo(
+    () => jobs.filter(j => !['Completed', 'Cancelled', 'Unsuccessful'].includes(j.status)),
+    [jobs]
+  );
+
+  useEffect(() => {
+    if (visibleJobs.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      setGeocoding(true);
+      for (const job of visibleJobs) {
+        if (cancelled) break;
+        if (coords[job.id]) continue;
+        const c = await geocodeAddress(job.address || '');
+        if (c && !cancelled) setCoords(prev => ({ ...prev, [job.id]: c }));
       }
-    }
-    if (isLoaded) loadData();
-  }, [isLoaded, refreshKey]);
+      if (!cancelled) setGeocoding(false);
+    })();
+    return () => { cancelled = true; };
+  }, [visibleJobs]);
 
-  if (loadError) {
-    return (
-      <div className="flex-1 relative h-full min-w-0 flex items-center justify-center bg-gray-50 border-r border-light-gray">
-        <p className="text-sm text-red-500 font-medium bg-red-50 px-4 py-2 rounded-lg border border-red-200">
-          Error loading Google Maps. Check your API key.
-        </p>
-      </div>
-    );
-  }
+  const jobsWithCoords: JobWithCoords[] = visibleJobs
+    .filter(j => coords[j.id])
+    .map(j => ({ ...j, coords: coords[j.id] }));
 
-  if (!isLoaded) {
-    return (
-      <div className="flex-1 relative h-full min-w-0 flex items-center justify-center bg-gray-50 border-r border-light-gray">
-        <div className="w-8 h-8 border-4 border-vision-green/30 border-t-vision-green rounded-full animate-spin" />
-      </div>
-    );
-  }
-
-  const jobOffsets = [
-    { lat: 0.02, lng: -0.03 },
-    { lat: -0.015, lng: 0.04 },
-    { lat: 0.03, lng: 0.02 },
+  const allPoints = [
+    ...jobsWithCoords.map(j => j.coords),
+    ...staffLocations.map(s => ({ lat: Number(s.latitude), lng: Number(s.longitude) })),
   ];
-
-  const jobsToDisplay = jobs.filter(j => j.status === 'Work Order' && j.scheduled_date);
 
   return (
     <div className="flex-1 relative h-full min-w-0">
       <div className="absolute inset-0 z-0">
-        <GoogleMap
-          mapContainerStyle={mapContainerStyle}
-          zoom={12}
-          center={defaultCenter}
-          options={{
-            disableDefaultUI: false,
-            zoomControl: true,
-            mapTypeControl: false,
-            streetViewControl: false,
-            fullscreenControl: true,
-            styles: [
-              {
-                featureType: 'poi',
-                elementType: 'labels',
-                stylers: [{ visibility: 'off' }],
-              },
-            ],
-          }}
+        <MapContainer
+          center={[MELBOURNE_COORDS.lat, MELBOURNE_COORDS.lng]}
+          zoom={7}
+          style={{ width: '100%', height: '100%' }}
+          scrollWheelZoom
         >
-          {/* Staff Markers */}
-          {staffLocations.map((loc) => (
-            <MarkerF
-              key={loc.id}
-              position={{ lat: Number(loc.latitude), lng: Number(loc.longitude) }}
-              icon={{
-                url: createStaffIcon(),
-                scaledSize: new window.google.maps.Size(40, 40),
-                anchor: new window.google.maps.Point(20, 20),
-              }}
-              onClick={() => {
-                setSelectedJob(null);
-                setSelectedStaff(loc);
-              }}
-            />
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          />
+          <FitBounds points={allPoints} />
+
+          {staffLocations.map(loc => (
+            <Marker key={loc.id} position={[Number(loc.latitude), Number(loc.longitude)]} icon={staffIcon}>
+              <Popup>
+                <strong>{loc.profile?.full_name}</strong>
+                <br />
+                <span style={{ color: '#6b7280', fontSize: 11 }}>{loc.profile?.status}</span>
+              </Popup>
+            </Marker>
           ))}
 
-          {/* Job Markers */}
-          {jobsToDisplay.map((job, i) => {
-            const offset = jobOffsets[i % jobOffsets.length];
-            return (
-              <MarkerF
-                key={job.id}
-                position={{
-                  lat: MELBOURNE_COORDS.lat + offset.lat,
-                  lng: MELBOURNE_COORDS.lng + offset.lng,
-                }}
-                icon={{
-                  url: createJobIcon(),
-                  scaledSize: new window.google.maps.Size(24, 24),
-                  anchor: new window.google.maps.Point(12, 12),
-                }}
-                onClick={() => {
-                  setSelectedStaff(null);
-                  setSelectedJob(job);
-                }}
-              />
-            );
-          })}
-
-          {/* Info Windows */}
-          {selectedStaff && (
-            <InfoWindowF
-              position={{ lat: selectedStaff.latitude, lng: selectedStaff.longitude }}
-              onCloseClick={() => setSelectedStaff(null)}
-              options={{ pixelOffset: new window.google.maps.Size(0, -20) }}
-            >
-              <div className="font-sans px-1 pb-1">
-                <strong className="text-gray-900 block">{selectedStaff.profile?.full_name}</strong>
-                <span className="text-gray-500 text-xs block">{selectedStaff.profile?.status}</span>
-              </div>
-            </InfoWindowF>
-          )}
-
-          {selectedJob && (
-            <InfoWindowF
-              position={{
-                lat: MELBOURNE_COORDS.lat + jobOffsets[jobsToDisplay.indexOf(selectedJob) % jobOffsets.length].lat,
-                lng: MELBOURNE_COORDS.lng + jobOffsets[jobsToDisplay.indexOf(selectedJob) % jobOffsets.length].lng,
-              }}
-              onCloseClick={() => setSelectedJob(null)}
-              options={{ pixelOffset: new window.google.maps.Size(0, -12) }}
-            >
-              <div className="font-sans px-1 pb-1 max-w-[200px]">
-                <strong className="text-gray-900 block mb-0.5">{selectedJob.job_number}</strong>
-                <span className="text-gray-600 text-xs block truncate">{selectedJob.client?.first_name} {selectedJob.client?.last_name}</span>
-                <span className="text-gray-500 text-[11px] block leading-tight mt-1">{selectedJob.address}</span>
-              </div>
-            </InfoWindowF>
-          )}
-        </GoogleMap>
+          {jobsWithCoords.map(job => (
+            <Marker key={job.id} position={[job.coords.lat, job.coords.lng]} icon={jobIcon}>
+              <Popup>
+                <div style={{ minWidth: 180 }}>
+                  <strong>{job.job_number}</strong>
+                  <br />
+                  <span style={{ color: '#374151', fontSize: 12 }}>
+                    {job.contact_name || (job.client ? `${job.client.first_name} ${job.client.last_name}` : '—')}
+                  </span>
+                  <br />
+                  <span style={{ color: '#6b7280', fontSize: 11 }}>{job.address}</span>
+                  <br />
+                  <span style={{ display: 'inline-block', marginTop: 4, padding: '2px 6px', borderRadius: 4, background: '#fff7ed', color: '#9a3412', fontSize: 10, fontWeight: 500 }}>{job.status}</span>
+                </div>
+              </Popup>
+            </Marker>
+          ))}
+        </MapContainer>
       </div>
 
+      <div className="absolute top-4 right-4 z-[1000] bg-white/90 backdrop-blur-sm rounded-lg border border-light-gray px-3 py-1.5 shadow-sm">
+        <p className="text-xs text-charcoal">
+          {geocoding && <span className="text-mid-gray">Locating… </span>}
+          <span className="font-semibold">{jobsWithCoords.length}</span>
+          <span className="text-mid-gray"> / {visibleJobs.length} jobs on map</span>
+        </p>
+      </div>
 
-      {/* Map legend */}
-      <div className="absolute bottom-6 left-4 z-[10] bg-white/90 backdrop-blur-sm rounded-lg border border-light-gray p-3 shadow-sm">
+      <div className="absolute bottom-6 left-4 z-[1000] bg-white/90 backdrop-blur-sm rounded-lg border border-light-gray p-3 shadow-sm">
         <p className="text-xs font-semibold text-charcoal mb-2">Legend</p>
         <div className="space-y-1.5">
           <div className="flex items-center gap-2">

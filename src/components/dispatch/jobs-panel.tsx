@@ -14,23 +14,12 @@ interface JobsPanelProps {
 }
 
 function JobCard({ job, onDoubleClick }: { job: Job; onDoubleClick: () => void }) {
-  const statusColors: Record<string, string> = {
-    'Quote': 'bg-solar-orange',
-    'Quote Sent': 'bg-solar-orange',
-    'Lead': 'bg-solar-orange',
-    'Work Order': 'bg-blue-500',
-    'In Progress': 'bg-vision-green',
-    'Completed': 'bg-vision-green',
-  };
-  const dotColor = statusColors[job.status] || 'bg-mid-gray';
-
   const statusLetters: Record<string, { letter: string; bg: string; text: string }> = {
-    'Quote': { letter: 'Q', bg: 'bg-solar-orange', text: 'text-white' },
-    'Quote Sent': { letter: 'Q', bg: 'bg-solar-orange', text: 'text-white' },
-    'Lead': { letter: 'Q', bg: 'bg-solar-orange', text: 'text-white' },
-    'Work Order': { letter: 'W', bg: 'bg-blue-500', text: 'text-white' },
-    'In Progress': { letter: 'W', bg: 'bg-blue-500', text: 'text-white' },
-    'Completed': { letter: 'C', bg: 'bg-vision-green', text: 'text-white' },
+    'Work Order':   { letter: 'W', bg: 'bg-blue-500',    text: 'text-white' },
+    'In Progress':  { letter: 'P', bg: 'bg-solar-orange', text: 'text-white' },
+    'Completed':    { letter: 'C', bg: 'bg-vision-green', text: 'text-white' },
+    'Cancelled':    { letter: 'X', bg: 'bg-mid-gray',     text: 'text-white' },
+    'Unsuccessful': { letter: 'U', bg: 'bg-destructive',  text: 'text-white' },
   };
   const badge = statusLetters[job.status] || { letter: '?', bg: 'bg-mid-gray', text: 'text-white' };
 
@@ -62,7 +51,7 @@ function JobCard({ job, onDoubleClick }: { job: Job; onDoubleClick: () => void }
             <p className="text-xs text-mid-gray truncate">{job.address}</p>
           </div>
           <div className="flex items-center gap-1 mt-0.5">
-            <span className={`w-1.5 h-1.5 rounded-full ${dotColor} shrink-0`} />
+            <span className={`w-1.5 h-1.5 rounded-full ${badge.bg} shrink-0`} />
             <p className="text-xs text-dark-gray truncate">{job.description?.substring(0, 60)}...</p>
           </div>
           <div className="mt-1.5 flex items-center text-[10px] text-vision-green font-medium opacity-0 group-hover:opacity-100 transition-opacity">
@@ -97,8 +86,8 @@ export function JobsPanel({ onJobDoubleClick, refreshKey }: JobsPanelProps) {
 
   const filteredJobs = jobs.filter(j => {
     // Status filter
-    if (filter === 'Quotes' && !['Quote', 'Quote Sent', 'Lead'].includes(j.status)) return false;
     if (filter === 'Work Orders' && j.status !== 'Work Order') return false;
+    if (filter === 'In Progress' && j.status !== 'In Progress') return false;
     if (filter === 'Completed' && j.status !== 'Completed') return false;
 
     // Search filter
@@ -131,8 +120,8 @@ export function JobsPanel({ onJobDoubleClick, refreshKey }: JobsPanelProps) {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="All Jobs">All Jobs</SelectItem>
-            <SelectItem value="Quotes">Quotes</SelectItem>
             <SelectItem value="Work Orders">Work Orders</SelectItem>
+            <SelectItem value="In Progress">In Progress</SelectItem>
             <SelectItem value="Completed">Completed</SelectItem>
           </SelectContent>
         </Select>

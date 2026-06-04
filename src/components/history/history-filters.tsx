@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
 const DATE_RANGES = ['Today', 'Yesterday', 'Last 7 Days', 'This Month', 'Custom'] as const;
-const STATUS_OPTIONS = ['Completed', 'Cancelled', 'Archived'] as const;
+const STATUS_OPTIONS = ['Work Order', 'In Progress', 'Completed', 'Cancelled', 'Unsuccessful'] as const;
 
 interface HistoryFiltersProps {
   search: string;
@@ -51,7 +51,7 @@ export function HistoryFilters({
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-mid-gray" />
           <Input
             id="history-search"
-            placeholder="Search by Job #, Client, Address, or Inverter Serial..."
+            placeholder="Search by Job #, Client, or Address..."
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
             className="pl-10 pr-8 h-10 bg-off-white border-light-gray"

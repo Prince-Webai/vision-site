@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react';
 import { Calendar, Users, FileCheck, TrendingUp } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { mockJobs, mockProfiles, getTodaysJobs } from '@/lib/mock-data';
+import { jobService } from '@/lib/supabase/service';
+import type { Job } from '@/lib/types';
 
 function AnimatedCounter({ value, prefix = '' }: { value: number; prefix?: string }) {
   const [count, setCount] = useState(0);
@@ -30,15 +31,15 @@ function AnimatedCounter({ value, prefix = '' }: { value: number; prefix?: strin
 }
 
 export function KpiCards() {
-  const todaysJobs = getTodaysJobs();
-  const pendingApprovals = mockJobs.filter(j => j.status === 'Quote Sent').length;
+  const [jobs, setJobs] = useState<Job[]>([]);
+  useEffect(() => {
+    jobService.fetchJobs().then(setJobs).catch(() => setJobs([]));
+  }, []);
 
-
-  const teamCounts = {
-    onSite: mockProfiles.filter(p => p.status === 'On Site').length,
-    enRoute: mockProfiles.filter(p => p.status === 'En Route').length,
-    available: mockProfiles.filter(p => p.status === 'Available').length,
-  };
+  const today = new Date().toISOString().slice(0, 10);
+  const todaysJobs = jobs.filter(j => j.scheduled_date === today);
+  const inProgress = jobs.filter(j => j.status === 'In Progress').length;
+  const teamCounts = { onSite: 0, enRoute: 0, available: 0 };
 
   const kpis = [
     {
@@ -57,12 +58,12 @@ export function KpiCards() {
       bgColor: 'bg-green-50',
     },
     {
-      title: 'Pending Approvals',
-      value: pendingApprovals,
+      title: 'In Progress',
+      value: inProgress,
       icon: FileCheck,
       color: 'text-solar-orange',
       bgColor: 'bg-orange-50',
-      trend: 'Awaiting client response',
+      trend: 'Jobs currently in progress',
     },
   ];
 

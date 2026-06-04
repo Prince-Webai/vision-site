@@ -18,15 +18,11 @@ export const COLORS = {
 
 // Job Statuses
 export const JOB_STATUSES = {
-  LEAD: 'Lead',
-  QUOTE: 'Quote',
-  QUOTE_SENT: 'Quote Sent',
   WORK_ORDER: 'Work Order',
   IN_PROGRESS: 'In Progress',
   COMPLETED: 'Completed',
   CANCELLED: 'Cancelled',
   UNSUCCESSFUL: 'Unsuccessful',
-  ARCHIVED: 'Archived',
 } as const;
 
 export type JobStatus = (typeof JOB_STATUSES)[keyof typeof JOB_STATUSES];
@@ -95,6 +91,7 @@ export const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 export const NAV_ITEMS = [
   { label: 'Dashboard', href: '/dashboard', icon: 'LayoutDashboard' },
   { label: 'Dispatch Board', href: '/dispatch', icon: 'MapPin' },
+  { label: 'Timesheets', href: '/timesheets', icon: 'Clock4' },
   { label: 'History', href: '/history', icon: 'Clock' },
 ] as const;
 
@@ -104,8 +101,15 @@ export const WEATHER_THRESHOLDS = {
   WIND_SPEED: 25, // km/h
 } as const;
 
-// Melbourne coordinates
-export const MELBOURNE_COORDS = {
-  lat: -37.8136,
-  lng: 144.9631,
+// Dublin, Ireland — default map center
+export const DEFAULT_COORDS = {
+  lat: 53.3498,
+  lng: -6.2603,
 } as const;
+// Legacy alias (other code still imports this name)
+export const MELBOURNE_COORDS = DEFAULT_COORDS;
+
+// Locale/currency defaults
+export const LOCALE = 'en-IE';
+export const CURRENCY = 'EUR';
+export const COUNTRY = 'Ireland';

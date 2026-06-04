@@ -11,13 +11,9 @@ export async function middleware(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        getAll() {
-          return request.cookies.getAll();
-        },
+        getAll() { return request.cookies.getAll(); },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value)
-          );
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
           supabaseResponse = NextResponse.next({ request });
           cookiesToSet.forEach(({ name, value, options }) =>
             supabaseResponse.cookies.set(name, value, options)
@@ -27,29 +23,22 @@ export async function middleware(request: NextRequest) {
     }
   );
 
-  // Refresh session — important, do not remove
   const { data: { user } } = await supabase.auth.getUser();
 
-  // Public routes that don't require authentication
-  const publicRoutes = ['/login', '/api'];
-  const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route));
+  // Public: login page, all /api routes, and the /print viewer
+  const publicRoutes = ['/login', '/api', '/print'];
+  const isPublic = publicRoutes.some(r => pathname.startsWith(r));
 
-  // Redirect root to dashboard
   if (pathname === '/') {
-    if (!user) {
-      return NextResponse.redirect(new URL('/login', request.url));
-    }
-    return NextResponse.redirect(new URL('/dashboard', request.url));
+    return NextResponse.redirect(new URL(user ? '/dashboard' : '/login', request.url));
   }
 
-  // If not logged in and trying to access a protected route → go to login
-  if (!user && !isPublicRoute) {
+  if (!user && !isPublic) {
     const loginUrl = new URL('/login', request.url);
     loginUrl.searchParams.set('redirect', pathname);
     return NextResponse.redirect(loginUrl);
   }
 
-  // If already logged in and trying to access the login page → go to dashboard
   if (user && pathname.startsWith('/login')) {
     return NextResponse.redirect(new URL('/dashboard', request.url));
   }

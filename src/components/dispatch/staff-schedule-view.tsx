@@ -1,7 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { mockProfiles } from '@/lib/mock-data';
 import { jobService } from '@/lib/supabase/service';
 import type { Job } from '@/lib/types';
 
@@ -31,15 +30,20 @@ export function StaffScheduleView({ onJobClick, refreshKey }: StaffScheduleViewP
   const [scheduledBlocks, setScheduledBlocks] = useState<ScheduledBlock[]>([]);
   const [dragOverCell, setDragOverCell] = useState<{ staffId: string; slotIndex: number } | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [staffMembers, setStaffMembers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function loadData() {
       try {
-        const data = await jobService.fetchJobs();
-        setJobs(data);
+        const [jobsData, profiles] = await Promise.all([
+          jobService.fetchJobs(),
+          jobService.fetchProfiles(),
+        ]);
+        setJobs(jobsData);
+        setStaffMembers(profiles.filter((p: any) => p.role === 'Technician' || p.role === 'Dispatcher'));
       } catch (error) {
-        console.error('Failed to load schedule data:', error);
+        console.error('Failed to load schedule data:', error?.message || error);
       } finally {
         setLoading(false);
       }
@@ -47,18 +51,63 @@ export function StaffScheduleView({ onJobClick, refreshKey }: StaffScheduleViewP
     loadData();
   }, [refreshKey]);
 
-  const staffMembers = mockProfiles.filter(p => p.role === 'Technician' || p.role === 'Dispatcher');
+  // Days that the current view spans (1 for Day, 7 for Week, 14 for 2 weeks, ~30 for Month)
+  const viewDays = view === 'Day' ? 1 : view === 'Week' ? 7 : view === '2 weeks' ? 14 : 30;
 
-  const dateLabel = selectedDate.toLocaleDateString('en-AU', {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
+  const visibleDates: Date[] = (() => {
+    const start = new Date(selectedDate);
+    if (view === 'Week') {
+      // Snap to Monday
+      const dow = (start.getDay() + 6) % 7; // 0 = Monday
+      start.setDate(start.getDate() - dow);
+    } else if (view === '2 weeks') {
+      const dow = (start.getDay() + 6) % 7;
+      start.setDate(start.getDate() - dow);
+    } else if (view === 'Month') {
+      start.setDate(1);
+    }
+    return Array.from({ length: viewDays }, (_, i) => {
+      const d = new Date(start);
+      d.setDate(d.getDate() + i);
+      return d;
+    });
+  })();
+
+  const dateLabel = (() => {
+    if (view === 'Day') {
+      return selectedDate.toLocaleDateString('en-IE', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
+    }
+    const first = visibleDates[0];
+    const last = visibleDates[visibleDates.length - 1];
+    if (view === 'Month') {
+      return first.toLocaleDateString('en-IE', { month: 'long', year: 'numeric' });
+    }
+    const fmt = (d: Date) => d.toLocaleDateString('en-IE', { day: 'numeric', month: 'short' });
+    return `${fmt(first)} – ${fmt(last)} ${last.getFullYear()}`;
+  })();
+
+  const stepBack = () => setSelectedDate(d => {
+    const nd = new Date(d);
+    nd.setDate(nd.getDate() - viewDays);
+    return nd;
   });
-
-  const prevDay = () => setSelectedDate(d => new Date(d.getFullYear(), d.getMonth(), d.getDate() - 1));
-  const nextDay = () => setSelectedDate(d => new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1));
+  const stepFwd = () => setSelectedDate(d => {
+    const nd = new Date(d);
+    nd.setDate(nd.getDate() + viewDays);
+    return nd;
+  });
   const goToday = () => setSelectedDate(new Date());
+
+  // For Day view, columns are TIME_SLOTS (hourly). For multi-day views, columns are dates.
+  const columns = view === 'Day' ? TIME_SLOTS : visibleDates.map(d =>
+    d.toLocaleDateString('en-IE', { weekday: 'short', day: 'numeric', month: view === 'Month' ? undefined : 'short' })
+  );
+
+  // For multi-day views, count jobs scheduled per (staff, date) from DB scheduled_date + assigned_to
+  const jobsForCell = (staffId: string, date: Date) => {
+    const iso = date.toISOString().slice(0, 10);
+    return jobs.filter(j => j.assigned_to === staffId && j.scheduled_date === iso);
+  };
 
   const handleDragOver = useCallback((e: React.DragEvent, staffId: string, slotIndex: number) => {
     e.preventDefault();
@@ -79,7 +128,7 @@ export function StaffScheduleView({ onJobClick, refreshKey }: StaffScheduleViewP
 
     // Find the job to determine duration
     const job = jobs.find(j => j.id === jobId);
-    const duration = job?.estimated_hours ? Math.ceil(job.estimated_hours) : 2;
+    const duration = job?.estimated_hours ? Math.ceil(job.estimated_hours) : 1;
 
     // Remove any existing block for this job
     setScheduledBlocks(prev => {
@@ -117,10 +166,10 @@ export function StaffScheduleView({ onJobClick, refreshKey }: StaffScheduleViewP
           >
             Today
           </button>
-          <button onClick={prevDay} className="text-mid-gray hover:text-charcoal p-0.5 rounded hover:bg-off-white">
+          <button onClick={stepBack} className="text-mid-gray hover:text-charcoal p-0.5 rounded hover:bg-off-white">
             <ChevronLeft className="w-4 h-4" />
           </button>
-          <button onClick={nextDay} className="text-mid-gray hover:text-charcoal p-0.5 rounded hover:bg-off-white">
+          <button onClick={stepFwd} className="text-mid-gray hover:text-charcoal p-0.5 rounded hover:bg-off-white">
             <ChevronRight className="w-4 h-4" />
           </button>
         </div>
@@ -147,20 +196,24 @@ export function StaffScheduleView({ onJobClick, refreshKey }: StaffScheduleViewP
       {/* Schedule Grid */}
       <div className="flex-1 overflow-auto bg-white">
         <table className="w-full border-collapse min-w-[900px]">
-          {/* Time header */}
-          <thead className="sticky top-0 z-10 bg-white">
+          {/* Column header */}
+          <thead>
             <tr>
-              <th className="w-[120px] min-w-[120px] px-3 py-2 text-left border-b border-r border-light-gray bg-off-white/70">
+              <th className="w-[120px] min-w-[120px] px-3 py-2 text-left border-b border-r border-light-gray bg-off-white sticky top-0 left-0 z-30 shadow-[1px_0_0_0_rgba(229,231,235,1)]">
                 <span className="text-[10px] text-mid-gray uppercase tracking-wider font-semibold">Staff</span>
               </th>
-              {TIME_SLOTS.map((slot, i) => (
-                <th
-                  key={i}
-                  className="min-w-[80px] px-2 py-2 text-center border-b border-r border-light-gray bg-off-white/70"
-                >
-                  <span className="text-[10px] text-mid-gray font-medium">{slot}</span>
-                </th>
-              ))}
+              {columns.map((label, i) => {
+                const isToday = view !== 'Day' && visibleDates[i] && visibleDates[i].toDateString() === new Date().toDateString();
+                return (
+                  <th
+                    key={i}
+                    onClick={view !== 'Day' && visibleDates[i] ? () => { setSelectedDate(visibleDates[i]); setView('Day'); } : undefined}
+                    className={`min-w-[80px] px-2 py-2 text-center border-b border-r border-light-gray sticky top-0 z-20 ${isToday ? 'bg-vision-green/10' : 'bg-off-white'} ${view!=='Day' ? 'cursor-pointer hover:bg-off-white/80' : ''}`}
+                  >
+                    <span className={`text-[10px] font-medium ${isToday ? 'text-vision-green' : 'text-mid-gray'}`}>{label}</span>
+                  </th>
+                );
+              })}
             </tr>
           </thead>
 
@@ -169,7 +222,7 @@ export function StaffScheduleView({ onJobClick, refreshKey }: StaffScheduleViewP
             {staffMembers.map(staff => (
               <tr key={staff.id} className="group/row">
                 {/* Staff name cell */}
-                <td className="px-3 py-3 border-b border-r border-light-gray bg-white sticky left-0 z-[5]">
+                <td className="px-3 py-3 border-b border-r border-light-gray bg-white sticky left-0 z-10 shadow-[1px_0_0_0_rgba(229,231,235,1)]">
                   <div className="flex items-center gap-2">
                     <Avatar className="w-7 h-7 shrink-0">
                       <AvatarFallback className="bg-vision-green/10 text-green-dark text-[10px] font-semibold">
@@ -180,8 +233,41 @@ export function StaffScheduleView({ onJobClick, refreshKey }: StaffScheduleViewP
                   </div>
                 </td>
 
-                {/* Time slot cells */}
-                {TIME_SLOTS.map((_, slotIndex) => {
+                {/* Multi-day view: one cell per date showing assigned jobs */}
+                {view !== 'Day' && visibleDates.map((date, di) => {
+                  const cellJobs = jobsForCell(staff.id, date);
+                  const isToday = date.toDateString() === new Date().toDateString();
+                  return (
+                    <td
+                      key={di}
+                      className={`align-top border-b border-r border-light-gray min-h-[64px] p-1 ${isToday ? 'bg-vision-green/5' : 'hover:bg-off-white/50'}`}
+                    >
+                      <div className="min-h-[60px] flex flex-col gap-1">
+                        {cellJobs.length === 0 ? (
+                          <div className="h-full" />
+                        ) : cellJobs.map(j => {
+                          const isQuote = j.status === 'In Progress';
+                          return (
+                            <button
+                              key={j.id}
+                              onClick={() => onJobClick(j.id)}
+                              className={`text-left rounded px-1.5 py-1 text-[10px] font-medium truncate ${
+                                isQuote
+                                  ? 'bg-solar-orange/20 text-orange-dark hover:bg-solar-orange/30'
+                                  : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
+                              }`}
+                            >
+                              {j.job_number}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </td>
+                  );
+                })}
+
+                {/* Day view: one cell per hour slot */}
+                {view === 'Day' && TIME_SLOTS.map((_, slotIndex) => {
                   const block = getBlockForCell(staff.id, slotIndex);
                   const occupied = !block && isCellOccupied(staff.id, slotIndex);
                   const isHovered = dragOverCell?.staffId === staff.id && dragOverCell?.slotIndex === slotIndex;
@@ -193,7 +279,7 @@ export function StaffScheduleView({ onJobClick, refreshKey }: StaffScheduleViewP
 
                   if (block) {
                     const job = jobs.find(j => j.id === block.jobId);
-                    const isQuote = job && ['Quote', 'Quote Sent', 'Lead'].includes(job.status);
+                    const isQuote = job && job.status === 'In Progress';
                     return (
                       <td
                         key={slotIndex}
@@ -246,7 +332,7 @@ export function StaffScheduleView({ onJobClick, refreshKey }: StaffScheduleViewP
 
             {staffMembers.length === 0 && (
               <tr>
-                <td colSpan={TIME_SLOTS.length + 1} className="text-center py-16">
+                <td colSpan={columns.length + 1} className="text-center py-16">
                   <p className="text-sm text-mid-gray">No staff members found</p>
                 </td>
               </tr>
@@ -258,7 +344,9 @@ export function StaffScheduleView({ onJobClick, refreshKey }: StaffScheduleViewP
       {/* Drop hint */}
       <div className="bg-off-white border-t border-light-gray px-4 py-2 shrink-0">
         <p className="text-[10px] text-mid-gray text-center">
-          Drag jobs from the Jobs panel and drop them on a staff member&apos;s time slot to schedule
+          {view === 'Day'
+            ? "Drag jobs from the Jobs panel and drop them on a staff member's time slot to schedule"
+            : "Click a date header to switch to Day view. Coloured pills are jobs assigned to that staff member on that date."}
         </p>
       </div>
     </div>

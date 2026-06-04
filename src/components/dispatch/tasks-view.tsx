@@ -17,7 +17,7 @@ export function TasksView({ onJobClick, refreshKey }: TasksViewProps) {
         const data = await jobService.fetchJobs();
         setJobs(data);
       } catch (error) {
-        console.error('Failed to load tasks:', error);
+        console.error('Failed to load tasks:', error?.message || error);
       } finally {
         setLoading(false);
       }
@@ -26,7 +26,7 @@ export function TasksView({ onJobClick, refreshKey }: TasksViewProps) {
   }, [refreshKey]);
 
   const jobsWithTasks = jobs.filter(j =>
-    !['Completed', 'Cancelled', 'Archived'].includes(j.status)
+    !['Completed', 'Cancelled', 'Unsuccessful'].includes(j.status)
   );
 
   return (

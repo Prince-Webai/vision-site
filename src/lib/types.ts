@@ -108,6 +108,21 @@ export interface SavedVersion {
   created_at: string;
 }
 
+export interface Timesheet {
+  id: string;
+  job_id: string;
+  profile_id: string;
+  profile?: Profile;
+  started_at: string;
+  ended_at?: string | null;
+  hourly_rate: number;
+  notes?: string | null;
+  duration_minutes?: number | null;
+  labor_cost?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface WeatherData {
   temperature: number;
   condition: string;

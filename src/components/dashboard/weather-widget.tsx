@@ -14,7 +14,7 @@ export function WeatherWidget() {
     async function fetchWeather() {
       try {
         const res = await fetch(
-          `https://api.open-meteo.com/v1/forecast?latitude=${MELBOURNE_COORDS.lat}&longitude=${MELBOURNE_COORDS.lng}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code&daily=precipitation_probability_max&timezone=Australia%2FSydney&forecast_days=1`
+          `https://api.open-meteo.com/v1/forecast?latitude=${MELBOURNE_COORDS.lat}&longitude=${MELBOURNE_COORDS.lng}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code&daily=precipitation_probability_max&timezone=Europe%2FDublin&forecast_days=1`
         );
         const data = await res.json();
         const current = data.current;
@@ -84,7 +84,7 @@ export function WeatherWidget() {
       <CardContent className="p-5">
         <div className="flex items-center justify-between mb-3">
           <div>
-            <p className="text-xs font-medium text-mid-gray uppercase tracking-wider">Melbourne, VIC</p>
+            <p className="text-xs font-medium text-mid-gray uppercase tracking-wider">Dublin, Ireland</p>
             <div className="flex items-baseline gap-2 mt-1">
               <span className="text-3xl font-bold text-charcoal">{weather?.temperature}°C</span>
               <span className="text-sm text-dark-gray">{weather?.condition}</span>

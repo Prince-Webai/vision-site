@@ -4,7 +4,10 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Search, X, Clock, FileText, User, MapPin } from 'lucide-react';
 import { Input } from '@/components/ui/input';
-import { mockJobs, mockClients } from '@/lib/mock-data';
+import { jobService } from '@/lib/supabase/service';
+import { JobModal } from '@/components/job-modal/job-modal';
+import { MobileNav } from '@/components/layout/mobile-nav';
+import type { Job, Client } from '@/lib/types';
 
 interface SearchResult {
   id: string;
@@ -23,8 +26,23 @@ export function Header() {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [showDropdown, setShowDropdown] = useState(false);
+  const [modalJobId, setModalJobId] = useState<string | undefined>();
+  const [modalOpen, setModalOpen] = useState(false);
+  const [allJobs, setAllJobs] = useState<Job[]>([]);
+  const [allClients, setAllClients] = useState<Client[]>([]);
+  const [currentUser, setCurrentUser] = useState<{ full_name: string; role: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Load real data once on mount
+  useEffect(() => {
+    Promise.all([jobService.fetchJobs(), jobService.fetchClients()])
+      .then(([j, c]) => { setAllJobs(j); setAllClients(c); })
+      .catch(() => {});
+    jobService.fetchProfiles()
+      .then(list => setCurrentUser((list[0] as any) || { full_name: 'Admin User', role: 'Admin' }))
+      .catch(() => setCurrentUser({ full_name: 'Admin User', role: 'Admin' }));
+  }, []);
 
   // Load recent searches from localStorage
   useEffect(() => {
@@ -42,40 +60,41 @@ export function Header() {
     }
     const timer = setTimeout(() => {
       const q = query.toLowerCase();
-      const jobResults: SearchResult[] = mockJobs
+      const jobResults: SearchResult[] = allJobs
         .filter(j =>
-          j.job_number.toLowerCase().includes(q) ||
-          j.client?.first_name.toLowerCase().includes(q) ||
-          j.client?.last_name.toLowerCase().includes(q) ||
-          j.address.toLowerCase().includes(q) ||
-          j.description.toLowerCase().includes(q)
+          j.job_number?.toLowerCase().includes(q) ||
+          j.client?.first_name?.toLowerCase().includes(q) ||
+          j.client?.last_name?.toLowerCase().includes(q) ||
+          j.contact_name?.toLowerCase().includes(q) ||
+          j.address?.toLowerCase().includes(q) ||
+          j.description?.toLowerCase().includes(q)
         )
-        .slice(0, 4)
+        .slice(0, 5)
         .map(j => ({
           id: j.id,
           type: 'job',
-          title: `${j.job_number} — ${j.client?.first_name} ${j.client?.last_name}`,
-          subtitle: j.address,
-          href: `/dashboard?job=${j.id}`,
+          title: `${j.job_number} — ${j.contact_name || (j.client ? `${j.client.first_name} ${j.client.last_name}` : '')}`,
+          subtitle: j.address || '',
+          href: `job:${j.id}`,
         }));
 
-      const clientResults: SearchResult[] = mockClients
+      const clientResults: SearchResult[] = allClients
         .filter(c =>
-          c.first_name.toLowerCase().includes(q) ||
-          c.last_name.toLowerCase().includes(q) ||
-          c.email.toLowerCase().includes(q)
+          c.first_name?.toLowerCase().includes(q) ||
+          c.last_name?.toLowerCase().includes(q) ||
+          (c.email || '').toLowerCase().includes(q)
         )
         .slice(0, 3)
         .map(c => ({
           id: c.id,
           type: 'client',
           title: `${c.first_name} ${c.last_name}`,
-          subtitle: c.email,
-          href: `/dashboard?client=${c.id}`,
+          subtitle: c.email || '',
+          href: `client:${c.id}`,
         }));
 
       setResults([...jobResults, ...clientResults]);
-    }, 300);
+    }, 200);
 
     return () => clearTimeout(timer);
   }, [query]);
@@ -106,7 +125,13 @@ export function Header() {
     saveSearch(result.title);
     setQuery('');
     setShowDropdown(false);
-    router.push(result.href);
+    if (result.href.startsWith('job:')) {
+      setModalJobId(result.href.slice(4));
+      setModalOpen(true);
+    } else {
+      // client: navigate to history filtered by client (best effort)
+      router.push('/history');
+    }
   };
 
   const iconForType = (type: string) => {
@@ -119,13 +144,13 @@ export function Header() {
   };
 
   return (
-    <header className="h-16 bg-white border-b border-light-gray flex items-center justify-between px-6 shrink-0 z-40 relative">
-      
-      {/* Left Area: Placeholder to keep center centered */}
-      <div className="hidden md:block min-w-[200px]"></div>
+    <header className="h-16 bg-white border-b border-light-gray flex items-center justify-between px-4 md:px-6 shrink-0 z-40 relative">
+
+      {/* Left Area: spacer only — hamburger removed, bottom nav is used on mobile */}
+      <div className="hidden md:flex items-center md:min-w-[200px]" />
 
       {/* Center Area: Prominent Wide Search */}
-      <div className="relative flex-1 max-w-2xl mx-8">
+      <div className="relative flex-1 max-w-2xl mx-2 md:mx-8">
         <div className="relative w-full group">
           <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
             <Search className="h-4 w-4 text-mid-gray group-focus-within:text-vision-green transition-colors" />
@@ -217,29 +242,25 @@ export function Header() {
       </div>
 
       {/* Right Area: Status & Tools */}
-      <div className="flex items-center gap-4 min-w-[200px] justify-end">
-        
-        {/* Date Display */}
-        <div className="flex flex-col items-end mr-2">
+      <div className="flex items-center gap-4 md:min-w-[200px] justify-end">
+
+        {/* Date Display — hidden on mobile */}
+        <div className="hidden sm:flex flex-col items-end mr-2">
           <p className="text-[10px] font-bold text-mid-gray tracking-widest uppercase">
-            {new Date().toLocaleDateString('en-AU', { weekday: 'long' })}
+            {new Date().toLocaleDateString('en-IE', { weekday: 'long' })}
           </p>
           <p className="text-sm font-semibold text-charcoal">
-            {new Date().toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}
+            {new Date().toLocaleDateString('en-IE', { day: 'numeric', month: 'short', year: 'numeric' })}
           </p>
         </div>
 
-        <div className="w-px h-8 bg-light-gray/70"></div>
-
-        {/* Notifications */}
-        <button className="relative w-10 h-10 flex items-center justify-center rounded-lg text-mid-gray hover:bg-off-white hover:text-charcoal transition-all group border border-transparent hover:border-light-gray/50">
-          <svg className="w-5 h-5 group-hover:animate-wiggle" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-          </svg>
-          <span className="absolute top-2 right-2.5 w-2 h-2 bg-solar-orange rounded-full border border-white"></span>
-        </button>
-
       </div>
+
+      <JobModal
+        open={modalOpen}
+        onOpenChange={(o) => { setModalOpen(o); if (!o) setModalJobId(undefined); }}
+        jobId={modalJobId}
+      />
     </header>
   );
 }

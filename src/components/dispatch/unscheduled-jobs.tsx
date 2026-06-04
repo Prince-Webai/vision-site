@@ -8,9 +8,7 @@ import { mockJobs } from '@/lib/mock-data';
 import type { Job } from '@/lib/types';
 
 function JobCard({ job }: { job: Job }) {
-  const isQuoteType = ['Quote', 'Quote Sent', 'Lead', 'Site Assessment'].includes(job.status) ||
-    job.category === 'Site Assessment';
-  const borderColor = isQuoteType ? 'border-l-solar-orange' : 'border-l-blue-500';
+  const borderColor = job.status === 'In Progress' ? 'border-l-solar-orange' : 'border-l-blue-500';
 
   return (
     <div
@@ -48,7 +46,7 @@ export function UnscheduledJobs() {
 
   const unscheduled = mockJobs.filter(j =>
     !j.scheduled_date &&
-    !['Completed', 'Cancelled', 'Archived'].includes(j.status)
+    !['Completed', 'Cancelled', 'Unsuccessful'].includes(j.status)
   );
 
   const filtered = unscheduled.filter(j => {

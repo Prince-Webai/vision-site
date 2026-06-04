@@ -1,11 +1,15 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { useIsMobile } from '@/hooks/use-is-mobile';
+import { MobileHistory } from '@/components/mobile/mobile-history';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { HistoryFilters } from '@/components/history/history-filters';
 import { HistoryTable } from '@/components/history/history-table';
 import { AuditLog } from '@/components/history/audit-log';
-import { getCompletedJobs, mockJobs } from '@/lib/mock-data';
+import { jobService } from '@/lib/supabase/service';
+import { JobModal } from '@/components/job-modal/job-modal';
+import type { Job } from '@/lib/types';
 
 const PAGE_SIZE = 10;
 
@@ -15,12 +19,23 @@ export default function HistoryPage() {
   const [statusFilter, setStatusFilter] = useState<string[]>([]);
   const [page, setPage] = useState(1);
 
-  // Get all historical jobs
-  const allHistoryJobs = useMemo(() => {
-    return mockJobs.filter(j =>
-      ['Completed', 'Cancelled', 'Archived'].includes(j.status)
-    );
-  }, []);
+  const [allJobs, setAllJobs] = useState<Job[]>([]);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [selectedJobId, setSelectedJobId] = useState<string | undefined>();
+  const [refresh, setRefresh] = useState(0);
+
+  useEffect(() => {
+    jobService.fetchJobs().then(setAllJobs).catch(() => setAllJobs([]));
+  }, [refresh]);
+
+  const openJob = (id: string) => {
+    setSelectedJobId(id);
+    setModalOpen(true);
+  };
+
+  // Get all historical jobs (Completed/Cancelled/Archived) — show ALL jobs by default
+  // so users can find what they recently created even before completion.
+  const allHistoryJobs = useMemo(() => allJobs, [allJobs]);
 
   // Apply filters
   const filteredJobs = useMemo(() => {
@@ -31,11 +46,11 @@ export default function HistoryPage() {
       const q = search.toLowerCase();
       jobs = jobs.filter(j =>
         j.job_number.toLowerCase().includes(q) ||
-        j.client?.first_name.toLowerCase().includes(q) ||
-        j.client?.last_name.toLowerCase().includes(q) ||
+        j.client?.first_name?.toLowerCase().includes(q) ||
+        j.client?.last_name?.toLowerCase().includes(q) ||
+        j.contact_name?.toLowerCase().includes(q) ||
         j.address.toLowerCase().includes(q) ||
-        j.system_size?.toLowerCase().includes(q) ||
-        j.description.toLowerCase().includes(q)
+        j.description?.toLowerCase().includes(q)
       );
     }
 
@@ -78,6 +93,12 @@ export default function HistoryPage() {
 
   const totalPages = Math.max(1, Math.ceil(filteredJobs.length / PAGE_SIZE));
   const paginatedJobs = filteredJobs.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  const isMobile = useIsMobile();
+
+  if (isMobile) {
+    return <MobileHistory />;
+  }
 
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto">
@@ -124,6 +145,7 @@ export default function HistoryPage() {
             page={page}
             totalPages={totalPages}
             onPageChange={setPage}
+            onJobClick={openJob}
           />
         </TabsContent>
 
@@ -137,6 +159,13 @@ export default function HistoryPage() {
           </div>
         </TabsContent>
       </Tabs>
+
+      <JobModal
+        open={modalOpen}
+        onOpenChange={setModalOpen}
+        jobId={selectedJobId}
+        onSuccess={() => setRefresh(r => r + 1)}
+      />
     </div>
   );
 }

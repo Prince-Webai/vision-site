@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   MapPin,
   Clock,
+  Clock4,
   ChevronLeft,
   ChevronRight,
   LogOut,
@@ -17,21 +18,27 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Separator } from '@/components/ui/separator';
-import { mockProfiles } from '@/lib/mock-data';
+import { jobService } from '@/lib/supabase/service';
 import { createClient } from '@/lib/supabase/client';
 
 const navItems = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { label: 'Dispatch Board', href: '/dispatch', icon: MapPin },
+  { label: 'Timesheets', href: '/timesheets', icon: Clock4 },
   { label: 'History', href: '/history', icon: Clock },
 ];
-
-const currentUser = mockProfiles[0]; // Rahul Mandal (Admin)
 
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const [collapsed, setCollapsed] = useState(false);
+  const [currentUser, setCurrentUser] = useState<{ full_name: string; role: string } | null>(null);
+
+  useEffect(() => {
+    jobService.fetchProfiles()
+      .then(list => setCurrentUser((list[0] as any) || { full_name: 'Admin User', role: 'Admin' }))
+      .catch(() => setCurrentUser({ full_name: 'Admin User', role: 'Admin' }));
+  }, []);
 
   const handleLogout = async () => {
     const supabase = createClient();
@@ -43,7 +50,7 @@ export function Sidebar() {
   return (
     <aside
       className={`
-        relative flex flex-col h-full bg-white border-r border-light-gray
+        relative hidden md:flex flex-col h-full bg-white border-r border-light-gray
         transition-all duration-300 ease-in-out shrink-0
         ${collapsed ? 'w-[68px]' : 'w-[240px]'}
       `}
@@ -137,13 +144,13 @@ export function Sidebar() {
         <div className={`flex items-center ${collapsed ? 'flex-col gap-2' : 'gap-3'}`}>
           <Avatar className="w-9 h-9 shrink-0 border-2 border-green-light/30">
             <AvatarFallback className="bg-vision-green text-white text-xs font-semibold">
-              {currentUser.full_name.split(' ').map(n => n[0]).join('')}
+              {currentUser?.full_name?.split(' ').map(n => n[0]).join('') || '?'}
             </AvatarFallback>
           </Avatar>
           {!collapsed && (
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-charcoal truncate">{currentUser.full_name}</p>
-              <p className="text-xs text-mid-gray truncate">{currentUser.role}</p>
+              <p className="text-sm font-semibold text-charcoal truncate">{currentUser?.full_name || 'Loading…'}</p>
+              <p className="text-xs text-mid-gray truncate">{currentUser?.role || ''}</p>
             </div>
           )}
           <Tooltip>
